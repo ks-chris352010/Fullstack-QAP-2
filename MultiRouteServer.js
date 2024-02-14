@@ -1,10 +1,8 @@
-const express = require("express");
+const http = require("http")
 const fs = require("fs");
 const path = require("path");
 const eventEmitter = require("events");
 const { format } = require("date-fns");
-
-const app = express();
 const logsDirectory = path.join(__dirname, "logs");
 
 class Emitters extends eventEmitter {}
@@ -53,43 +51,58 @@ const writeToLogFile = (filename, message) => {
   fs.appendFileSync(logFilePath, logMessage);
 };
 
-// Uses express so that I could make the website look half decent.
-app.use(express.static(path.join(__dirname, "CSS")));
-
-const handleRoute = (res, filename) => {
+// Creates the server:
+const server = http.createServer((request, response) => {
   const viewsPath = path.join(__dirname, "Views");
-  const filePath = path.join(viewsPath, filename);
+  
+  // Displays the page to the user:
+  const connectPage = (filename) => {
+    const filePath = path.join(viewsPath, filename);
+    fs.readFile(filePath, "utf8", (err, data) => {
+      if (err) {
+        // If the page is not found displays an error in both the console and to the user.
+        console.error(`Error reading ${filename}: ${err.message}`);
+        response.writeHead(500, {"Content-Type": "text/plain"});
+        response.end("Internal Server Error\n");
+      } else {
+        response.writeHead(200, {"Content-Type": "text/html"});
+        response.write(data);
+        response.end();
+      }
+    })
+  }
+  // Switch statement to connect the user to the page:
+  switch (request.url) {
+    case '/':
+      connectPage('home.html');
+      break;
+    case '/about':
+      HttpEmitter.emit("routeAccessed", "about")
+      connectPage('about.html');
+      break;
 
-  fs.readFile(filePath, "utf8", (err, data) => {
-    if (err) {
-      FileRead.emit("fileNotAvailable", filename);
-      res.status(500).send("Internal Server Error");
-    } else {
-      FileRead.emit("fileRead", filename);
-      res.status(200).send(data);
-    }
-  });
-};
+    case '/contact':
+      HttpEmitter.emit("routeAccessed", "contact")
+      connectPage('contact.html');
+      break;
 
-app.get("/", (req, res) => handleRoute(res, "home.html"));
-app.get("/about", (req, res) => {
-  HttpEmitter.emit("routeAccessed", "/about");
-  handleRoute(res, "about.html");
-});
-app.get("/contact", (req, res) => {
-  HttpEmitter.emit("routeAccessed", "/contact");
-  handleRoute(res, "contact.html");
-});
-app.get("/products", (req, res) => {
-  HttpEmitter.emit("routeAccessed", "/products");
-  handleRoute(res, "products.html");
-});
-app.get("/subscribe", (req, res) => {
-  HttpEmitter.emit("routeAccessed", "/subscribe");
-  handleRoute(res, "subscribe.html");
+    case '/products':
+      HttpEmitter.emit("routeAccessed", "products")
+      connectPage('products.html');
+      break;
+
+    case '/subscribe':
+      HttpEmitter.emit("routeAccessed", "subscribe")
+      connectPage('subscribe.html');
+      break;
+
+    default:
+      response.writeHead(404, { 'Content-Type': 'text/plain' });
+      response.end('404 Not Found\n');
+  }
 });
 
 const PORT = 3000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}/`);
 });
