@@ -1,8 +1,11 @@
-const http = require("http");
+const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const eventEmitter = require("events");
 const { format } = require("date-fns");
+
+const app = express();
+const logsDirectory = path.join(__dirname, "logs");
 
 class Emitters extends eventEmitter {}
 
@@ -41,7 +44,6 @@ FileRead.on("fileNotAvailable", (fileName) => {
 });
 
 // Logging files:
-const logsDirectory = path.join(__dirname, "logs");
 if (!fs.existsSync(logsDirectory)) {
   fs.mkdirSync(logsDirectory);
 }
@@ -51,62 +53,43 @@ const writeToLogFile = (filename, message) => {
   fs.appendFileSync(logFilePath, logMessage);
 };
 
-// Creates the server:
-const server = http.createServer((request, response) => {
+// Uses express so that I could make the website look half decent.
+app.use(express.static(path.join(__dirname, "CSS")));
+
+const handleRoute = (res, filename) => {
   const viewsPath = path.join(__dirname, "Views");
+  const filePath = path.join(viewsPath, filename);
 
-  // Displays the page to the user:
-  const connectPage = (filename) => {
-    const filePath = path.join(viewsPath, filename);
-    fs.readFile(filePath, "utf8", (err, data) => {
-      if (err) {
-        FileRead.emit("fileNotAvailable", filename);
-        response.writeHead(500, { "Content-Type": "text/plain" });
-        response.end("Internal Server Error\n");
-      } else {
-        FileRead.emit("fileRead", filename);
-        response.writeHead(200, { "Content-Type": "text/html" });
-        response.write(data);
-        response.end();
-      }
-    });
-  };
+  fs.readFile(filePath, "utf8", (err, data) => {
+    if (err) {
+      FileRead.emit("fileNotAvailable", filename);
+      res.status(500).send("Internal Server Error");
+    } else {
+      FileRead.emit("fileRead", filename);
+      res.status(200).send(data);
+    }
+  });
+};
 
-  // Switch statement to connect the user to the page:
-  switch (request.url) {
-    case "/":
-      connectPage("home.html");
-      break;
-
-    case "/about":
-      HttpEmitter.emit("routeAccessed", "/about");
-      connectPage("about.html");
-      break;
-
-    case "/contact":
-      HttpEmitter.emit("routeAccessed", "/contact");
-      connectPage("contact.html");
-      break;
-
-    case "/products":
-      HttpEmitter.emit("routeAccessed", "/products");
-      connectPage("products.html");
-      break;
-
-    case "/subscribe":
-      HttpEmitter.emit("routeAccessed", "/subscribe");
-      connectPage("subscribe.html");
-      break;
-
-    default:
-      HttpEmitter.emit("nonHomeRouteAccessed", request.url);
-      response.writeHead(404, { "Content-Type": "text/plain" });
-      response.end("404 Not Found\n");
-      break;
-  }
+app.get("/", (req, res) => handleRoute(res, "home.html"));
+app.get("/about", (req, res) => {
+  HttpEmitter.emit("routeAccessed", "/about");
+  handleRoute(res, "about.html");
+});
+app.get("/contact", (req, res) => {
+  HttpEmitter.emit("routeAccessed", "/contact");
+  handleRoute(res, "contact.html");
+});
+app.get("/products", (req, res) => {
+  HttpEmitter.emit("routeAccessed", "/products");
+  handleRoute(res, "products.html");
+});
+app.get("/subscribe", (req, res) => {
+  HttpEmitter.emit("routeAccessed", "/subscribe");
+  handleRoute(res, "subscribe.html");
 });
 
 const PORT = 3000;
-server.listen(PORT, () => {
+app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}/`);
 });
