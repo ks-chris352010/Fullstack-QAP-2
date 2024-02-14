@@ -1,56 +1,95 @@
-const http = require("http");
+const express = require("express");
 const fs = require("fs");
 const path = require("path");
+const eventEmitter = require("events");
+const { format } = require("date-fns");
 
-// Creates the server:
-const server = http.createServer((request, response) => {
+const app = express();
+const logsDirectory = path.join(__dirname, "logs");
+
+class Emitters extends eventEmitter {}
+
+// HTTP Emitters:
+const HttpEmitter = new Emitters();
+HttpEmitter.on("httpStatus", (statusCode) => {
+  const message = `HTTP Status code: ${statusCode}`;
+  console.log(message);
+  writeToLogFile("httpStatus.log", message);
+});
+
+HttpEmitter.on("routeAccessed", (route) => {
+  const message = `Route accessed: ${route}`;
+  console.log(message);
+  writeToLogFile("routeAccessed.log", message);
+});
+
+HttpEmitter.on("nonHomeRouteAccessed", (route) => {
+  const message = `Non-home route accessed: ${route}`;
+  console.log(message);
+  writeToLogFile("nonHomeRouteAccessed.log", message);
+});
+
+// File Emitters:
+const FileRead = new Emitters();
+FileRead.on("fileRead", (fileName) => {
+  const message = `File read: ${fileName}`;
+  console.log(message);
+  writeToLogFile("fileRead.log", message);
+});
+
+FileRead.on("fileNotAvailable", (fileName) => {
+  const message = `Failed to read: ${fileName}`;
+  console.log(message);
+  writeToLogFile("fileNotAvailable.log", message);
+});
+
+// Logging files:
+if (!fs.existsSync(logsDirectory)) {
+  fs.mkdirSync(logsDirectory);
+}
+const writeToLogFile = (filename, message) => {
+  const logFilePath = path.join(logsDirectory, filename);
+  const logMessage = `${format(new Date(), "yyyy-MM-dd HH:mm:ss")} - ${message}\n`;
+  fs.appendFileSync(logFilePath, logMessage);
+};
+
+// Uses express so that I could make the website look half decent.
+app.use(express.static(path.join(__dirname, "CSS")));
+
+const handleRoute = (res, filename) => {
   const viewsPath = path.join(__dirname, "Views");
-  
-  // Displays the page to the user:
-  const connectPage = (filename) => {
-    const filePath = path.join(viewsPath, filename);
-    fs.readFile(filePath, "utf8", (err, data) => {
-      if (err) {
-        // If the page is not found displays an error in both the console and to the user.
-        console.error(`Error reading ${filename}: ${err.message}`);
-        response.writeHead(500, {"Content-Type": "text/plain"});
-        response.end("Internal Server Error\n");
-      } else {
-        response.writeHead(200, {"Content-Type": "text/html"});
-        response.write(data);
-        response.end();
-      }
-    })
-  }
-  // Switch statement to connect the user to the page:
-  switch (request.url) {
-    case '/':
-      connectPage('home.html');
-      break;
+  const filePath = path.join(viewsPath, filename);
 
-    case '/about':
-      connectPage('about.html');
-      break;
+  fs.readFile(filePath, "utf8", (err, data) => {
+    if (err) {
+      FileRead.emit("fileNotAvailable", filename);
+      res.status(500).send("Internal Server Error");
+    } else {
+      FileRead.emit("fileRead", filename);
+      res.status(200).send(data);
+    }
+  });
+};
 
-    case '/contact':
-      connectPage('contact.html');
-      break;
-
-    case '/products':
-      connectPage('products.html');
-      break;
-
-    case '/subscribe':
-      connectPage('subscribe.html');
-      break;
-
-    default:
-      response.writeHead(404, { 'Content-Type': 'text/plain' });
-      response.end('404 Not Found\n');
-  }
+app.get("/", (req, res) => handleRoute(res, "home.html"));
+app.get("/about", (req, res) => {
+  HttpEmitter.emit("routeAccessed", "/about");
+  handleRoute(res, "about.html");
+});
+app.get("/contact", (req, res) => {
+  HttpEmitter.emit("routeAccessed", "/contact");
+  handleRoute(res, "contact.html");
+});
+app.get("/products", (req, res) => {
+  HttpEmitter.emit("routeAccessed", "/products");
+  handleRoute(res, "products.html");
+});
+app.get("/subscribe", (req, res) => {
+  HttpEmitter.emit("routeAccessed", "/subscribe");
+  handleRoute(res, "subscribe.html");
 });
 
 const PORT = 3000;
-server.listen(PORT, () => {
+app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}/`);
 });
